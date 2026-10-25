@@ -84,17 +84,35 @@ o.bind("Alt_L", "Window switcher: pick", hl.dsp.global("swipe-switcher:pick"),
 
 Run `hyprctl reload` afterwards. Hold Alt, tap Tab to move, release Alt to switch.
 
-## Tuning
+## Settings
 
-The swipe settings are at the top of `Switcher.qml` in the plugin folder:
+Open the settings window:
 
-| Property | Default | Meaning |
+```bash
+omarchy-shell shell toggle io.github.vekhyat.swipe-switcher
+```
+
+To open it with a key, add a line like this to `~/.config/hypr/bindings.lua`:
+
+```lua
+o.bind("SUPER + ALT + S", "Swipe Switcher settings", { panel = "io.github.vekhyat.swipe-switcher" })
+```
+
+Changes apply as you make them:
+
+| Setting | Default | What it does |
 | --- | --- | --- |
-| `swipeFingers` | `3` | Fingers for the swipe |
-| `stepDistance` | `105` | Finger travel per window, in libinput units (a full slide is about 400). Higher is slower. |
-| `commitDelay` | `650` | For `next`/`prev` over IPC without a held swipe: ms before the highlighted window is picked |
+| Switch windows with a swipe | on | Turns the touchpad reader on or off. Shows whether the touchpad is being read, and why not if it isn't. |
+| Fingers | 3 | Three- or four-finger swipe |
+| Finger travel per window | 105 | Libinput units per window step (a full slide is about 400). Lower is faster. |
+| Reverse direction | off | Swipe right to move the highlight left |
+| Order | Where windows sit | Left to right on screen, or most recently used first |
+| Wrap around at the ends | off | Off: the highlight stops at the first and last window |
+| Preview height | 170 | Height of each preview, in pixels |
 
-Run `omarchy restart shell` after editing.
+The window also has a button that copies the Alt+Tab setup lines from the section above.
+
+Settings are saved in this plugin's entry in `~/.config/omarchy/shell.json`.
 
 ## Remove
 

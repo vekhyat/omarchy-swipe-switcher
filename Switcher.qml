@@ -46,10 +46,23 @@ Item {
 
   readonly property int commitDelay: 650
 
-  // Touchpad swipe tuning. Distances are libinput's unaccelerated units; a
-  // full slide across a laptop touchpad is roughly 400.
-  readonly property int swipeFingers: 3
-  readonly property real stepDistance: 105
+  // User settings, edited in the settings window (Settings.qml) and kept in
+  // this plugin's entry in ~/.config/omarchy/shell.json. Distances are
+  // libinput's unaccelerated units; a full slide across a laptop touchpad is
+  // roughly 400.
+  readonly property string pluginId: "io.github.vekhyat.swipe-switcher"
+  readonly property var defaults: ({
+    swipeEnabled: true,
+    swipeFingers: 3,
+    stepDistance: 105,
+    reverseSwipe: false,
+    swipeOrder: "position",
+    wrapSwipe: false,
+    previewHeight: 170
+  })
+  property var settings: defaults
+  readonly property int swipeFingers: settings.swipeFingers
+  readonly property real stepDistance: settings.stepDistance
   // Travel before deciding whether the swipe is horizontal (ours) or vertical
   // (left to Hyprland).
   readonly property real lockDistance: 15
@@ -67,7 +80,7 @@ Item {
   readonly property int cornerRadius: Style.cornerRadius
   property string fontFamily: Style.font.menuFamily
   property int gap: Style.space(12)
-  property int previewHeight: Style.space(170)
+  property int previewHeight: Style.space(root.settings.previewHeight)
   // Previews shrink so every window fits on screen.
   property int tileWidth: {
     var count = Math.max(1, root.windows.length)
@@ -103,12 +116,13 @@ Item {
     root.step(delta)
   }
 
-  // A swipe stops at the ends instead of wrapping, so swiping right never
-  // lands on a window to the left. Alt+Tab wraps.
+  // A swipe stops at the ends instead of wrapping unless the user turned
+  // wrapping on, so swiping right never lands on a window to the left.
+  // Alt+Tab wraps.
   function select(index) {
     var n = root.windows.length
     if (n === 0) return
-    if (root.mode === "keys") root.selectedIndex = ((index % n) + n) % n
+    if (root.mode === "keys" || root.settings.wrapSwipe) root.selectedIndex = ((index % n) + n) % n
     else root.selectedIndex = Math.max(0, Math.min(n - 1, index))
   }
 
@@ -155,7 +169,7 @@ Item {
     root.forgetClosed(clients)
 
     // Start from the focused window, whatever order the list is in.
-    var ordered = root.mode === "keys"
+    var ordered = root.mode === "keys" || root.settings.swipeOrder === "recent"
       ? here.slice().sort(function(a, b) { return a.focusHistoryID - b.focusHistoryID })
       : root.orderWindows(here)
     var active = 0
@@ -215,7 +229,7 @@ Item {
     if (!root.swipeActive) return
     var d = /\(\s*(-?[\d.]+)\/\s*(-?[\d.]+) unaccelerated\)/.exec(m[3])
     if (!d) return
-    root.swipeDx += parseFloat(d[1])
+    root.swipeDx += parseFloat(d[1]) * (root.settings.reverseSwipe ? -1 : 1)
     root.swipeDy += parseFloat(d[2])
 
     if (root.swipeLock === "" && Math.abs(root.swipeDx) + Math.abs(root.swipeDy) >= root.lockDistance) {
@@ -237,6 +251,42 @@ Item {
     }
   }
 
+  // Settings as stored, with anything missing or invalid taken from defaults.
+  function readSettings(text) {
+    var entry = null
+    try {
+      var plugins = JSON.parse(text).plugins || []
+      for (var i = 0; i < plugins.length; i++) {
+        if (plugins[i] && plugins[i].id === root.pluginId) entry = plugins[i]
+      }
+    } catch (e) {
+      return
+    }
+    var next = Object.assign({}, root.defaults)
+    for (var key in root.defaults) {
+      if (entry && typeof entry[key] === typeof root.defaults[key]) next[key] = entry[key]
+    }
+    next.swipeFingers = next.swipeFingers === 4 ? 4 : 3
+    next.stepDistance = Math.max(30, Math.min(300, next.stepDistance))
+    next.previewHeight = Math.max(80, Math.min(360, next.previewHeight))
+    if (next.swipeOrder !== "recent") next.swipeOrder = "position"
+    if (JSON.stringify(next) !== JSON.stringify(root.settings)) root.settings = next
+  }
+
+  // Applies at once; writes shell.json once the user stops changing things.
+  function setSetting(key, value) {
+    if (!(key in root.defaults)) return
+    var next = Object.assign({}, root.settings)
+    next[key] = value
+    root.settings = next
+    saveTimer.restart()
+  }
+
+  function resetSettings() {
+    root.settings = Object.assign({}, root.defaults)
+    saveTimer.restart()
+  }
+
   function commit() {
     commitTimer.stop()
     var win = root.windows[root.selectedIndex]
@@ -252,6 +302,22 @@ Item {
     root.held = false
     root.opened = false
     root.windows = []
+  }
+
+  FileView {
+    path: Quickshell.env("HOME") + "/.config/omarchy/shell.json"
+    watchChanges: true
+    onFileChanged: reload()
+    onLoaded: root.readSettings(text())
+  }
+
+  Timer {
+    id: saveTimer
+    interval: 400
+    onTriggered: {
+      if (root.shell && typeof root.shell.updateEntryInline === "function")
+        root.shell.updateEntryInline(root.pluginId, root.settings)
+    }
   }
 
   Timer {
@@ -276,11 +342,28 @@ Item {
   readonly property int maxQuickFailures: 5
   property int quickFailures: 0
   property real touchpadStarted: 0
+  // For the settings window: "reading", "off", "starting", "no-touchpad",
+  // "no-access", "no-libinput" or "gave-up".
+  property string readerStatus: "starting"
+
+  onSettingsChanged: {
+    if (root.settings.swipeEnabled && !touchpadProc.running && !touchpadRetry.running) {
+      root.quickFailures = 0
+      touchpadProc.running = true
+    } else if (!root.settings.swipeEnabled) {
+      touchpadRetry.stop()
+      touchpadProc.running = false
+      root.readerStatus = "off"
+    }
+  }
 
   Process {
     id: touchpadProc
     running: true
-    onRunningChanged: if (running) root.touchpadStarted = Date.now()
+    onRunningChanged: if (running) {
+      root.touchpadStarted = Date.now()
+      root.readerStatus = "reading"
+    }
     command: ["bash", "-c",
       "for f in /sys/class/input/event*/device/name; do " +
       "  if grep -qi touchpad \"$f\"; then " +
@@ -295,19 +378,32 @@ Item {
       onRead: function(line) { root.readSwipe(line) }
     }
     stderr: SplitParser {
-      onRead: function(line) { console.warn("swipe-switcher: touchpad reader: " + line) }
+      onRead: function(line) {
+        console.warn("swipe-switcher: touchpad reader: " + line)
+        if (/no touchpad found/.test(line)) root.readerStatus = "no-touchpad"
+        else if (/permission denied|failed to open/i.test(line)) root.readerStatus = "no-access"
+        else if (/not found|No such file/i.test(line)) root.readerStatus = "no-libinput"
+      }
     }
     onExited: {
+      if (!root.settings.swipeEnabled) {
+        root.readerStatus = "off"
+        return
+      }
+      if (root.readerStatus === "reading") root.readerStatus = "starting"
       root.quickFailures = Date.now() - root.touchpadStarted < 60000 ? root.quickFailures + 1 : 0
       if (root.quickFailures < root.maxQuickFailures) touchpadRetry.start()
-      else console.warn("swipe-switcher: touchpad reader keeps failing; giving up until the shell restarts")
+      else {
+        if (root.readerStatus === "starting") root.readerStatus = "gave-up"
+        console.warn("swipe-switcher: touchpad reader keeps failing; giving up until the shell restarts")
+      }
     }
   }
 
   Timer {
     id: touchpadRetry
     interval: 30000
-    onTriggered: touchpadProc.running = true
+    onTriggered: if (root.settings.swipeEnabled) touchpadProc.running = true
   }
 
   ShellIpc {
@@ -315,6 +411,7 @@ Item {
 
     function next(): void { root.step(1) }
     function prev(): void { root.step(-1) }
+    function settings(): void { if (root.shell) root.shell.toggle(root.pluginId, "") }
   }
 
   GlobalShortcut {

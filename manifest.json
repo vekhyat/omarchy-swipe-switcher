@@ -2,14 +2,16 @@
   "schemaVersion": 1,
   "id": "io.github.vekhyat.swipe-switcher",
   "name": "Swipe Switcher",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "vekhyat",
   "license": "MIT",
   "description": "Windows-style three-finger swipe between the windows on the current workspace, with live previews that follow your fingers. Optional Alt+Tab with previews.",
   "kinds": [
-    "service"
+    "service",
+    "overlay"
   ],
   "entryPoints": {
-    "service": "Switcher.qml"
+    "service": "Switcher.qml",
+    "overlay": "Settings.qml"
   }
 }
