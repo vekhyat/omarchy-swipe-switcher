@@ -14,7 +14,8 @@ Only three-finger horizontal swipes are taken. Vertical three-finger swipes and 
 
 ## Requirements
 
-- Omarchy with the Quickshell-based Omarchy shell (Omarchy 4.5 or later)
+- Omarchy with the Quickshell-based Omarchy shell and Hyprland's Lua config (tested on Omarchy 4.5.0rc1, Hyprland 0.56)
+- `setpriv` (util-linux, installed on every Arch system)
 - A touchpad
 - `libinput-tools`, for `libinput debug-events`:
 

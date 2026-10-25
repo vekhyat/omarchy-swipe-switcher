@@ -270,18 +270,25 @@ Item {
   }
 
   // The touchpad's swipe events, as the fingers move. Needs libinput-tools and
-  // the user in the `input` group; retried in case the touchpad comes back
-  // after a resume or the group is granted later.
+  // the user in the `input` group. Retried in case the touchpad comes back
+  // after a resume; given up after maxQuickFailures runs that end within a
+  // minute, such as without read access.
+  readonly property int maxQuickFailures: 5
+  property int quickFailures: 0
+  property real touchpadStarted: 0
+
   Process {
     id: touchpadProc
     running: true
+    onRunningChanged: if (running) root.touchpadStarted = Date.now()
     command: ["bash", "-c",
       "for f in /sys/class/input/event*/device/name; do " +
       "  if grep -qi touchpad \"$f\"; then " +
       "    d=${f#/sys/class/input/}; " +
-      // grep is the process the shell owns, so stopping it also ends
-      // libinput at its next event (broken pipe) instead of leaving it behind.
-      "    exec grep --line-buffered GESTURE_SWIPE < <(stdbuf -oL libinput debug-events --device /dev/input/${d%%/*}); " +
+      // grep is the process the shell owns. setpriv ends libinput as soon as
+      // grep stops (shell restart, plugin reload), which a broken pipe alone
+      // would only do at the touchpad's next event.
+      "    exec grep --line-buffered GESTURE_SWIPE < <(setpriv --pdeathsig TERM stdbuf -oL libinput debug-events --device /dev/input/${d%%/*}); " +
       "  fi; " +
       "done; echo 'no touchpad found' >&2; exit 1"]
     stdout: SplitParser {
@@ -290,7 +297,11 @@ Item {
     stderr: SplitParser {
       onRead: function(line) { console.warn("swipe-switcher: touchpad reader: " + line) }
     }
-    onExited: touchpadRetry.start()
+    onExited: {
+      root.quickFailures = Date.now() - root.touchpadStarted < 60000 ? root.quickFailures + 1 : 0
+      if (root.quickFailures < root.maxQuickFailures) touchpadRetry.start()
+      else console.warn("swipe-switcher: touchpad reader keeps failing; giving up until the shell restarts")
+    }
   }
 
   Timer {
