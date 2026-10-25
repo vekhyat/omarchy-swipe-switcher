@@ -5,7 +5,7 @@ Windows-style three-finger swipe between the windows on your current workspace, 
 Put three fingers on the touchpad and slide left or right. A row of live window previews appears as soon as you start moving, the highlight follows your fingers one window at a time, and lifting your fingers focuses the highlighted window.
 
 - **Follows your fingers.** Hyprland's own gesture actions only fire after you lift your fingers. This plugin reads the touchpad directly, so the highlight moves while you slide.
-- **Spatial order.** Windows are shown left to right as they sit on screen. Swiping right never lands on a window to the left: the highlight stops at the ends.
+- **Spatial order.** By default windows are shown left to right as they sit on screen and the highlight stops at the ends, so swiping right never lands on a window to the left. Order and wrapping can be changed in the settings.
 - **Live previews.** Windows that are off screen (for example scrolled away on the scrolling layout) get no frames from Hyprland, so their tile shows the last frame the switcher saw, or the app icon.
 - **Optional Alt+Tab** with the same previews, most recently used first, released on Alt (see below).
 - Click a preview or press Enter to pick it now. Escape or a click outside cancels.
@@ -92,10 +92,10 @@ Open the settings window:
 omarchy-shell shell toggle io.github.vekhyat.swipe-switcher
 ```
 
-To open it with a key, add a line like this to `~/.config/hypr/bindings.lua`:
+To open it with a key, add a line like this to `~/.config/hypr/bindings.lua`. `SUPER + CTRL + ALT + J` is free on a stock Omarchy; check yours with `omarchy menu keybindings --print` first:
 
 ```lua
-o.bind("SUPER + ALT + S", "Swipe Switcher settings", { panel = "io.github.vekhyat.swipe-switcher" })
+o.bind("SUPER + CTRL + ALT + J", "Swipe Switcher settings", { panel = "io.github.vekhyat.swipe-switcher" })
 ```
 
 Changes apply as you make them:

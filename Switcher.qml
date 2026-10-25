@@ -61,6 +61,7 @@ Item {
     previewHeight: 170
   })
   property var settings: defaults
+  property bool hasEntry: false
   readonly property int swipeFingers: settings.swipeFingers
   readonly property real stepDistance: settings.stepDistance
   // Travel before deciding whether the swipe is horizontal (ours) or vertical
@@ -254,10 +255,14 @@ Item {
   // Settings as stored, with anything missing or invalid taken from defaults.
   function readSettings(text) {
     var entry = null
+    root.hasEntry = false
     try {
       var plugins = JSON.parse(text).plugins || []
       for (var i = 0; i < plugins.length; i++) {
-        if (plugins[i] && plugins[i].id === root.pluginId) entry = plugins[i]
+        if (plugins[i] && plugins[i].id === root.pluginId) {
+          entry = plugins[i]
+          root.hasEntry = true
+        }
       }
     } catch (e) {
       return
@@ -315,8 +320,11 @@ Item {
     id: saveTimer
     interval: 400
     onTriggered: {
-      if (root.shell && typeof root.shell.updateEntryInline === "function")
-        root.shell.updateEntryInline(root.pluginId, root.settings)
+      var saved = root.shell && typeof root.shell.updateEntryInline === "function"
+        && root.shell.updateEntryInline(root.pluginId, root.settings)
+      // false also means nothing changed, so only a missing entry is a failure.
+      if (!saved && !root.hasEntry)
+        console.warn("swipe-switcher: settings not saved: no plugins[] entry for " + root.pluginId + " in shell.json")
     }
   }
 
@@ -346,13 +354,20 @@ Item {
   // "no-access", "no-libinput" or "gave-up".
   property string readerStatus: "starting"
 
+  // Set while we stop the reader ourselves, so its exit is not a failure.
+  property bool stoppingReader: false
+
   onSettingsChanged: {
     if (root.settings.swipeEnabled && !touchpadProc.running && !touchpadRetry.running) {
       root.quickFailures = 0
       touchpadProc.running = true
+    } else if (!root.settings.swipeEnabled && touchpadProc.running) {
+      touchpadRetry.stop()
+      root.stoppingReader = true
+      touchpadProc.running = false
+      root.readerStatus = "off"
     } else if (!root.settings.swipeEnabled) {
       touchpadRetry.stop()
-      touchpadProc.running = false
       root.readerStatus = "off"
     }
   }
@@ -386,6 +401,15 @@ Item {
       }
     }
     onExited: {
+      // Turned off and maybe on again before the old reader finished exiting.
+      if (root.stoppingReader) {
+        root.stoppingReader = false
+        if (root.settings.swipeEnabled) {
+          root.quickFailures = 0
+          touchpadProc.running = true
+        }
+        return
+      }
       if (!root.settings.swipeEnabled) {
         root.readerStatus = "off"
         return
